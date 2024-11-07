@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Termux Installation Checker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <style>
+        /* Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 80%;
+            max-width: 800px;
+            text-align: center;
+        }
+        h1, h2 {
+            color: #007BFF;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+            font-size: 14px;
+        }
+        th {
+            background-color: #007BFF;
+            color: white;
+        }
+        button {
+            background-color: #007BFF;
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .loading-text {
+            padding: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #ff8800;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        .spinner {
+            width: 15px;
+            height: 15px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007BFF;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .success-text {
+            font-size: 12px;
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error-text {
+            font-size: 12px;
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        let loadingStatus = {}; // สถานะการโหลดของแต่ละอุปกรณ์
+        let checkIntervals = {}; // เก็บ interval สำหรับแต่ละอุปกรณ์
+
+        // ฟังก์ชันติดตั้งสำหรับอุปกรณ์เฉพาะ
+        async function install(deviceId) {
+            loadingStatus[deviceId] = "กำลังเริ่มติดตั้ง..."; // ตั้งค่าข้อความสถานะ
+            updateTableStatus(deviceId, true); // อัปเดตสถานะในตารางพร้อมแสดงแอนิเมชัน
+
+            try {
+                const response = await axios.get(`/install?device_id=${deviceId}`);
+                const data = response.data;
+
+                if (data.status === "success") {
+                    loadingStatus[deviceId] = "กำลังติดตั้ง...";
+                    updateTableStatus(deviceId, true); // อัปเดตสถานะในตารางพร้อมแอนิเมชัน
+                    startCheckingStatus(deviceId); // เริ่มตรวจสอบสถานะซ้ำ ๆ
+                } else {
+                    loadingStatus[deviceId] = "ข้อผิดพลาด!";
+                    updateTableStatus(deviceId, false); // อัปเดตสถานะในตารางและซ่อนแอนิเมชัน
+                }
+            } catch (error) {
+                loadingStatus[deviceId] = "ข้อผิดพลาด!";
+                updateTableStatus(deviceId, false); // อัปเดตสถานะในตารางและซ่อนแอนิเมชัน
+            }
+        }
+
+// ฟังก์ชันสำหรับ forward TCP/IP
+        async function forwardTcpip(deviceId) {
+            loadingStatus[deviceId] = "กำลังตั้งค่า TCP/IP..."; // ตั้งค่าข้อความสถานะ
+            updateTableStatus(deviceId, true); // อัปเดตสถานะในตารางพร้อมแสดงแอนิเมชัน
+                const response = await axios.post(`/adb/tcpip?device_id=${deviceId}`);
+                const data = response.data;
+                
+
+                if (data.status == "success") {
+                    loadingStatus[deviceId] = "ตั้งค่า TCP/IP สำเร็จ";
+                    updateTableStatus(deviceId, false); // อัปเดตสถานะในตารางและซ่อนแอนิเมชัน
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'สำเร็จ!',
+                        text: data.message
+                    });
+                } else {
+                    loadingStatus[deviceId] = "ข้อผิดพลาด!";
+                    updateTableStatus(deviceId, false); // อัปเดตสถานะในตารางและซ่อนแอนิเมชัน
+
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'ข้อผิดพลาด!',
+                        text: data.message
+                    });
+                }
+           
+        }
+
+        // ฟังก์ชันสำหรับเริ่มตรวจสอบสถานะซ้ำ ๆ ด้วย setInterval
+        function startCheckingStatus(deviceId) {
+            if (checkIntervals[deviceId]) {
+                clearInterval(checkIntervals[deviceId]);
+            }
+
+            checkIntervals[deviceId] = setInterval(() => {
+                checkInstallStatus(deviceId);
+            }, 3000);
+        }
+
+        // ฟังก์ชันสำหรับตรวจสอบสถานะการติดตั้ง
+        async function checkInstallStatus(deviceId) {
+            try {
+                const response = await axios.get(`/checkinstall?device_id=${deviceId}`);
+                const data = response.data;
+
+                if (data.status === "success") {
+                    loadingStatus[deviceId] = "สำเร็จ";
+                    updateTableStatus(deviceId, false); // อัปเดตสถานะในตารางและซ่อนแอนิเมชัน
+
+                    clearInterval(checkIntervals[deviceId]);
+                } else {
+                    loadingStatus[deviceId] = "กำลังติดตั้ง...";
+                    updateTableStatus(deviceId, true);
+                }
+            } catch (error) {
+                loadingStatus[deviceId] = "ข้อผิดพลาด!";
+                updateTableStatus(deviceId, false);
+
+                clearInterval(checkIntervals[deviceId]);
+            }
+        }
+
+        // ฟังก์ชันสำหรับเรียก API และแสดงอุปกรณ์ในตาราง
+        async function getDevices() {
+            try {
+                const response = await axios.get('/devices');
+                const devices = response.data;
+                const tableBody = document.getElementById("devices-table-body");
+
+                tableBody.innerHTML = "";
+
+                if (devices.length > 0) {
+                    devices.forEach((device, index) => {
+                        loadingStatus[device] = "รอการติดตั้ง"; 
+                        const row = `<tr>
+                                        <td>${index + 1}</td>
+                                        <td>${device}</td>
+                                        <td>
+                                            <button onclick="install('${device}')">ติดตั้ง</button>
+                                            <button onclick="forwardTcpip('${device}')">Forward TCP/IP</button>
+                                        </td>
+                                        <td id="status-${device}" class="loading-text">${loadingStatus[device]}</td>
+                                    </tr>`;
+                        tableBody.innerHTML += row;
+                    });
+                } else {
+                    tableBody.innerHTML = "<tr><td colspan='4'>ไม่มีอุปกรณ์ที่เชื่อมต่อ</td></tr>";
+                }
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'ข้อผิดพลาด!',
+                    text: 'ไม่สามารถเรียก API ได้'
+                });
+            }
+        }
+
+        function updateTableStatus(deviceId, isLoading) {
+            const statusElement = document.getElementById(`status-${deviceId}`);
+            if (statusElement) {
+                if (isLoading) {
+                    statusElement.innerHTML = `${loadingStatus[deviceId]} <div class="spinner"></div>`;
+                } else {
+                    statusElement.innerHTML = loadingStatus[deviceId];
+                }
+                if (loadingStatus[deviceId] === "สำเร็จ") {
+                    statusElement.className = "success-text";
+                } else if (loadingStatus[deviceId] === "ข้อผิดพลาด!") {
+                    statusElement.className = "error-text";
+                } else {
+                    statusElement.className = "loading-text";
+                }
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            getDevices();
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>อุปกรณ์ที่เชื่อมต่อ</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ลำดับ</th>
+                    <th>อุปกรณ์</th>
+                    <th>การดำเนินการ</th>
+                    <th>สถานะ</th>
+                </tr>
+            </thead>
+            <tbody id="devices-table-body">
+                <tr>
+                    <td colspan="4">กำลังโหลดข้อมูล...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
